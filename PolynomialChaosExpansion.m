@@ -5,36 +5,18 @@ classdef PolynomialChaosExpansion
         max_order
         a
         b
+        result_file_name
     end
 
     methods
 
-        function obj = PolynomialChaosExpansion(func, dim, max_order, a, b)
+        function obj = PolynomialChaosExpansion(func, dim, max_order, a, b, result_file_name)
             obj.func = func;
             obj.dim = dim;
             obj.max_order = max_order;
             obj.a = a;
             obj.b = b;
-        end
-
-        % To calculate kl divergence
-        function klDiv = calculateKLDivergence(obj, xtrue, xpred)
-            % This function calculates the Kullback-Leibler Divergence
-            [P, xi] = ksdensity(xtrue);
-            [Q, ~] = ksdensity(xpred, xi);
-
-            % P and Q are two discrete probability distributions
-            % Ensure P and Q are normalized (sum to 1)
-            P = P / sum(P);
-            Q = Q / sum(Q);
-
-            % Ensure no zero elements; KL is undefined for P(i) = 0 or Q(i) = 0
-            epsilon = 1e-10;
-            P(P == 0) = epsilon;
-            Q(Q == 0) = epsilon;
-
-            % Calculate KL Divergence
-            klDiv = sum(P .* log(P ./ Q));
+            obj.result_file_name = result_file_name;
         end
 
         % Generate Samples from the distribution
@@ -58,7 +40,7 @@ classdef PolynomialChaosExpansion
         end
 
         % Build Amatrix for solving pce coefficient
-        % use multiindices and basis samples
+        % uses multiindices and basis samples
         % basis samples example: U[-1,1] and N[0,1]
         function amatrix = computeAmatrix(obj, multiIndices, basisSamp)
             DIM = size(multiIndices,2);
@@ -80,45 +62,7 @@ classdef PolynomialChaosExpansion
         function response_mcs = mcsResponse(obj, x_mcs_original)
             response_mcs = obj.func(x_mcs_original);
         end
-
-        % plotting pdf of the response; 
-        function plot_pdf(obj, y, label_str)
-            % Check if the figure already exists, if not create a new one
-            fig = findobj('Type', 'figure', 'Name', 'PDFPlot');
-            if isempty(fig)
-                fig = figure('Name', 'PDFPlot');
-                set(fig, 'Color', 'w'); 
-            end
-            hold on; 
-
-            % Compute kernel density estimate and plot
-            [xi, fi] = ksdensity(y);
-            plot(fi, xi, 'LineWidth', 2, 'DisplayName', label_str);
-
-            % Plot settings
-            title('Probability Density Function (PDF)');
-            xlabel('Response (y)');
-            ylabel('PDF');
-            grid on;
-            legend show; 
-            ax=gca; set(ax,'FontName','Times','Fontsize',16,'FontWeight','bold');
-            ax.GridLineStyle = '--'; grid on;
-            saveas(gcf, 'pdf_plot.png');
-        end
-
-        % plotting KLD of the two pdfs
-        function plot_kld_convergence(obj, kld)
-            fig = figure('Name', 'KLDPlot');
-            set(fig, 'Color', 'w'); 
-            semilogy(1:length(kld), kld, 'o-', 'color', '#2ECC71', 'LineWidth',3)
-            xlabel('PCE order');
-            ylabel('KL Divergence');
-            ax=gca; set(ax,'FontName','Times','Fontsize',16,'FontWeight','bold');
-            ax.GridLineStyle = '--'; grid on;
-            saveas(gcf, 'kld_convergence.png')
-               
-        end
-    
+ 
         % ==========================================
         % Define different PCE solutions schemes
         % L2 based, L1 based, L1/L2 combination
@@ -165,7 +109,7 @@ classdef PolynomialChaosExpansion
                     A, b, Aeq, beq, solver_choice, opts1, opts2_xinit);
                 pce_coeff_l1(:, iit) = optX;
                 pce_response_test_l1(:,iit) = Amatrix_test * pce_coeff_l1(:,iit);
-                kld_l1(iit,1) = obj.calculateKLDivergence(mcs_response, pce_response_test_l1(:,iit));
+                kld_l1(iit,1) = calculateKLDivergence(mcs_response, pce_response_test_l1(:,iit));
             end
 
             % select the best solution based on kld error
@@ -191,8 +135,6 @@ classdef PolynomialChaosExpansion
             x = linsolve(Amat, y);
         end
 
-        % =========================================
-
 
         % Get PCE response based on the obtained coefficients 
         function pce_response_test = getPCEresponse(obj, Amatrix, coeff)
@@ -202,6 +144,8 @@ classdef PolynomialChaosExpansion
 
         % ============== Main Loop: Run Everything ============
         function runPCE(obj, nsamp_pce, nsamp_mcs)
+            fprintf('PCE Initiated ...\n')
+
             % for building pce
             [basis_samp_build_pce, org_samp_build_pce] = obj.generateSamples(nsamp_pce);
             response_build_pce = obj.func(org_samp_build_pce);
@@ -211,9 +155,9 @@ classdef PolynomialChaosExpansion
             Amatrix_test = [];
             [basis_samp_test_pce, org_samp_test_pce] = obj.generateSamples(nsamp_mcs);
             mcs_response = obj.mcsResponse(org_samp_test_pce);
-            obj.plot_pdf(mcs_response, 'MCS')
 
             for order = 1:obj.max_order
+                fprintf('... order - %d\n', order)
 
                 multiind_current = generateMultiIndices(obj.dim, order);
 
@@ -225,18 +169,15 @@ classdef PolynomialChaosExpansion
 
                 % ====================
                 % here you can change the type of solver to use for pce solutions
-                % pce_coeff = obj.solveLeastSquares(Amatrix, response_build_pce);
+                pce_coeff = obj.solveLeastSquares(Amatrix, response_build_pce);
 
-                [pce_coeff, lambda]= obj.solveL1Minimization(Amatrix, Amatrix_test, response_build_pce, mcs_response);
+                % [pce_coeff, lambda]= obj.solveL1Minimization(Amatrix, Amatrix_test, response_build_pce, mcs_response);
 
                 % ====================
 
                 pce_response = obj.getPCEresponse(Amatrix_test, pce_coeff);
-                kld = obj.calculateKLDivergence(mcs_response, pce_response);
+                kld = calculateKLDivergence(mcs_response, pce_response);
 
-                if order >=1 %  obj.max_order
-                    obj.plot_pdf(pce_response, ['PCE-order:' num2str(order)])
-                end
                 PCE.response_pce(:, order) = pce_response;
                 PCE.coeff{order, 1} = pce_coeff;
                 PCE.kld(order, 1) = kld;
@@ -249,11 +190,10 @@ classdef PolynomialChaosExpansion
             PCE.response_mcs = mcs_response;
             PCE.samples_basis = basis_samp_test_pce;
             PCE.samples_original = org_samp_test_pce;
-            save('PCE_results.mat','PCE')
+            save(obj.result_file_name,'PCE')
 
-            obj.plot_kld_convergence(PCE.kld)
+            fprintf('Maximum order achieved ... Done !!! \n')
         end
-
 
     end
 end

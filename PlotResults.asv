@@ -1,0 +1,104 @@
+classdef PlotResults
+    properties
+        ResultsFilePath
+        FontSize
+        FontName
+        FontWeight
+        LineWidth
+        ColorScheme
+    end
+
+    methods
+        % Constructor
+        function obj = PlotResults(resultsFilePath, varargin)
+            % Initialize default properties
+            obj.ResultsFilePath = resultsFilePath;
+            obj.FontSize = 12;
+            obj.FontName = 'Times';
+            obj.FontWeight = 'bold';
+            obj.LineWidth = 2;
+            % obj.ColorScheme = lines; % MATLAB's default line color order
+
+            % Process optional arguments (e.g., font size, line width)
+            if nargin > 1
+                for k = 1:length(varargin)
+                    if strcmpi(varargin{k}, 'FontSize')
+                        obj.FontSize = varargin{k + 1};
+                    elseif strcmpi(varargin{k}, 'LineWidth')
+                        obj.LineWidth = varargin{k + 1};
+                    % Add more properties if needed
+                    end
+                end
+            end
+        end
+
+        % Method to load results
+        function results = loadResults(obj)
+            if exist(obj.ResultsFilePath, 'file')
+                results = load(obj.ResultsFilePath);
+            else
+                error('Results file not found.');
+            end
+        end
+
+        % Method to plot PDF
+        function plotPDF(obj, MCS,PCE, label_str, fig_name)
+            fig = figure('Name', 'PDFPlot');
+            set(fig, 'Color', 'w');
+            hold on;
+
+            % Compute and plot kernel density estimate
+            [xi, fi] = ksdensity(MCS);
+            plot(fi, xi, '-', 'LineWidth', obj.LineWidth, 'color', '#EFA717', 'DisplayName', label_str{1});
+
+            [xi, fi] = ksdensity(PCE);
+            plot(fi, xi, '--', 'LineWidth', obj.LineWidth, 'color', '#21EF17', 'DisplayName', label_str{2});
+
+            % Plot settings
+            title('Probability Density Function (PDF)');
+            xlabel('Response (y)');
+            ylabel('PDF');
+            grid on;
+            legend show;
+            ax = gca;
+            set(ax, 'FontName', obj.FontName, 'FontSize', obj.FontSize, 'FontWeight', obj.FontWeight);
+            ax.GridLineStyle = '--';
+            grid on;
+            saveas(gcf, fig_name);
+            close(fig);
+        end
+
+        % Method to plot KL Divergence Convergence
+        function plotKLConvergence(obj, kld)
+            printf('Plotting Results: KLD convergence ...')
+            fig = figure('Name', 'KLDPlot');
+            set(fig, 'Color', 'w');
+            semilogy(1:length(kld), kld, 's-', 'LineWidth', obj.LineWidth, 'Color', '#1BBCCF');
+
+            % Plot settings
+            xlabel('PCE Order');
+            ylabel('KL Divergence');
+            ax = gca;
+            set(ax, 'FontName', obj.FontName, 'FontSize', obj.FontSize, 'FontWeight', obj.FontWeight);
+            ax.GridLineStyle = '--';
+            grid on;
+            saveas(gcf, 'kld_convergence.png');
+            close(fig);
+        end
+
+        function pdf_pce_mcs(obj, results)
+            fprintf('Plotting results: PDF plots ....')
+                mcs = results.PCE.response_mcs;
+
+            for order = 1:size(results.PCE.response_pce, 2)
+                pce = results.PCE.response_pce(:, order);
+                fig_name = ['pdf_order_' num2str(order) '.png'];
+                obj.plotPDF(mcs, pce, {'MCS', ['PCE-order:' num2str(order)]}, fig_name)
+            end
+            fprintf('... Done !\n')
+        end
+
+    end
+
+end
+
